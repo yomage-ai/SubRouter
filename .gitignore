@@ -1,0 +1,29 @@
+# Local environment
+/.env
+/.env.local
+/.env.*.local
+
+# Local tooling scratch
+/.codex-local/
+/PLAN.md
+
+# Rust
+/target/
+**/target/
+
+# Frontend
+/coverage/
+/node_modules/
+**/node_modules/
+/dist/
+**/dist/
+
+# Logs and runtime files
+*.log
+*.pid
+
+# Editor and OS noise
+/.DS_Store
+/Thumbs.db
+/.idea/
+/.vscode/

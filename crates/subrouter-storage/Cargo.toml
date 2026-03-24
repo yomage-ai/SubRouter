@@ -1,0 +1,18 @@
+[package]
+name = "subrouter-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aes-gcm.workspace = true
+base64.workspace = true
+chrono.workspace = true
+hex.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+subrouter-domain = { path = "../subrouter-domain" }
+thiserror.workspace = true
+uuid.workspace = true
