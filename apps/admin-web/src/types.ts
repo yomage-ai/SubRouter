@@ -94,3 +94,22 @@ export interface DashboardSummary {
   highest_five_hour_usage: number | null
   highest_seven_day_usage: number | null
 }
+
+export type DashboardTokenRange = '24h' | '7d' | '30d'
+
+export interface DashboardTokenUsagePoint {
+  bucket_start: string
+  request_count: number
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+}
+
+export interface DashboardTokenUsageSeries {
+  range: DashboardTokenRange
+  bucket_seconds: number
+  total_requests: number
+  total_input_tokens: number
+  total_output_tokens: number
+  points: DashboardTokenUsagePoint[]
+}

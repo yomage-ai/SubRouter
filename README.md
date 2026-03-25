@@ -30,7 +30,7 @@ SubRouter 是一个面向 Codex CLI 的自托管透明代理，用来统一管�
 1. 复制 `.env.example` 为 `.env`
 2. 至少填写 `SUBROUTER_ADMIN_TOKEN`、`SUBROUTER_MASTER_KEY`
 3. OpenAI ChatGPT OAuth 默认已经内置 `auth.openai.com/oauth/token` 和 Codex CLI `client_id`，通常只需要保留 `.env.example` 里的默认值；`SUBROUTER_OAUTH_CLIENT_SECRET` 对这条链路可留空
-   默认的 `SUBROUTER_QUOTA_PROBE_MODEL` 已调整为 `gpt-5-mini`，用于更快地刷新 5h/7d 配额快照
+   默认的 `SUBROUTER_QUOTA_PROBE_MODEL` 已调整为 `gpt-5.4-mini`，用于更快地刷新 5h/7d 配额快照
 4. 启动后端
 
 ```powershell

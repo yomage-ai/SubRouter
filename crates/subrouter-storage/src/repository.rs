@@ -6,7 +6,8 @@ use sqlx::{FromRow, PgPool};
 use subrouter_domain::account::DomainValidationError;
 use subrouter_domain::{
     Account, AccountDetail, AccountOverview, AccountSecret, AccountSecretMetadata, AccountStatus,
-    AccountUsageStats, AccountUsageSummary, CreateAccountInput, DashboardSummary, QuotaSnapshot,
+    AccountUsageStats, AccountUsageSummary, CreateAccountInput, DashboardSummary,
+    DashboardTokenRange, DashboardTokenUsagePoint, DashboardTokenUsageSeries, QuotaSnapshot,
     QuotaSource, RequestOutcome, SessionAffinity, Transport, UpdateAccountInput, UsageEvent,
     UsageSource, WindowType, success_rate_percent,
 };
@@ -624,6 +625,69 @@ impl Storage {
         })
     }
 
+    pub async fn dashboard_token_usage(
+        &self,
+        range: DashboardTokenRange,
+    ) -> Result<DashboardTokenUsageSeries, StorageError> {
+        let (bucket_seconds, bucket_count) = match range {
+            DashboardTokenRange::Last24Hours => (60_i64 * 60, 24_i64),
+            DashboardTokenRange::Last7Days => (6_i64 * 60 * 60, 28_i64),
+            DashboardTokenRange::Last30Days => (24_i64 * 60 * 60, 30_i64),
+        };
+
+        let end = align_timestamp(Utc::now(), bucket_seconds);
+        let start = end - chrono::Duration::seconds(bucket_seconds * (bucket_count - 1));
+
+        let rows = sqlx::query_as::<_, DashboardTokenUsagePointRow>(
+            r#"
+            SELECT
+                buckets.bucket_start,
+                COALESCE(COUNT(usage_events.id), 0)::BIGINT AS request_count,
+                COALESCE(SUM(usage_events.input_tokens), 0)::BIGINT AS input_tokens,
+                COALESCE(SUM(usage_events.output_tokens), 0)::BIGINT AS output_tokens
+            FROM generate_series(
+                $1::timestamptz,
+                $2::timestamptz,
+                ($3::BIGINT * INTERVAL '1 second')
+            ) AS buckets(bucket_start)
+            LEFT JOIN usage_events
+                ON usage_events.created_at >= buckets.bucket_start
+               AND usage_events.created_at < buckets.bucket_start + ($3::BIGINT * INTERVAL '1 second')
+            GROUP BY buckets.bucket_start
+            ORDER BY buckets.bucket_start ASC
+            "#,
+        )
+        .bind(start)
+        .bind(end)
+        .bind(bucket_seconds)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let points = rows
+            .into_iter()
+            .map(|row| DashboardTokenUsagePoint {
+                bucket_start: row.bucket_start,
+                request_count: row.request_count,
+                input_tokens: row.input_tokens,
+                output_tokens: row.output_tokens,
+                total_tokens: row.input_tokens + row.output_tokens,
+            })
+            .collect::<Vec<_>>();
+
+        let total_requests = points.iter().map(|point| point.request_count).sum();
+        let total_input_tokens = points.iter().map(|point| point.input_tokens).sum();
+        let total_output_tokens = points.iter().map(|point| point.output_tokens).sum();
+
+        Ok(DashboardTokenUsageSeries {
+            range,
+            bucket_seconds,
+            total_requests,
+            total_input_tokens,
+            total_output_tokens,
+            points,
+        })
+    }
+
     pub async fn record_usage_event(&self, event: UsageEvent) -> Result<(), StorageError> {
         sqlx::query(
             r#"
@@ -1117,6 +1181,14 @@ struct DashboardUsageSummaryRow {
 }
 
 #[derive(Debug, FromRow)]
+struct DashboardTokenUsagePointRow {
+    bucket_start: DateTime<Utc>,
+    request_count: i64,
+    input_tokens: i64,
+    output_tokens: i64,
+}
+
+#[derive(Debug, FromRow)]
 struct SecretMetadataRow {
     token_expires_at: Option<Vec<u8>>,
     fingerprint: Option<Vec<u8>>,
@@ -1274,6 +1346,11 @@ impl TryFrom<SessionAffinityRow> for SessionAffinity {
 
 fn parse_timestamp(value: &str) -> Result<DateTime<Utc>, chrono::ParseError> {
     DateTime::parse_from_rfc3339(value).map(|value| value.with_timezone(&Utc))
+}
+
+fn align_timestamp(value: DateTime<Utc>, bucket_seconds: i64) -> DateTime<Utc> {
+    let aligned = value.timestamp() - value.timestamp().rem_euclid(bucket_seconds);
+    DateTime::<Utc>::from_timestamp(aligned, 0).unwrap_or(value)
 }
 
 fn parse_transport(value: &str) -> Result<Transport, StorageError> {
