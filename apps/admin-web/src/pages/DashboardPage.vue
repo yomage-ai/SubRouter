@@ -7,6 +7,7 @@ import type {
   DashboardTokenRange,
   DashboardTokenUsagePoint,
   DashboardTokenUsageSeries,
+  ProxySettings,
 } from '../types'
 
 const RANGE_OPTIONS = [
@@ -22,6 +23,11 @@ const RANGE_OPTIONS = [
 const loading = ref(true)
 const error = ref('')
 const summary = ref<DashboardSummary | null>(null)
+const proxySettings = ref<ProxySettings | null>(null)
+const settingsLoading = ref(true)
+const settingsSaving = ref(false)
+const settingsError = ref('')
+const settingsMessage = ref('')
 
 const selectedRange = ref<DashboardTokenRange>('24h')
 const trendLoading = ref(true)
@@ -42,6 +48,21 @@ async function loadSummary() {
     error.value = err instanceof Error ? err.message : '仪表盘加载失败'
   } finally {
     loading.value = false
+  }
+}
+
+async function loadProxySettings() {
+  settingsLoading.value = true
+  settingsError.value = ''
+
+  try {
+    proxySettings.value = await apiRequest<ProxySettings>('/api/admin/settings/proxy', {
+      method: 'GET',
+    })
+  } catch (err) {
+    settingsError.value = err instanceof Error ? err.message : '代理模式加载失败'
+  } finally {
+    settingsLoading.value = false
   }
 }
 
@@ -78,7 +99,38 @@ async function loadTokenUsage(range = selectedRange.value) {
 }
 
 async function load() {
-  await Promise.all([loadSummary(), loadTokenUsage(selectedRange.value)])
+  await Promise.all([loadSummary(), loadTokenUsage(selectedRange.value), loadProxySettings()])
+}
+
+async function toggleFastMode() {
+  if (!proxySettings.value) {
+    return
+  }
+
+  const previousValue = proxySettings.value.fast_mode_enabled
+  const nextValue = !previousValue
+
+  settingsSaving.value = true
+  settingsError.value = ''
+  settingsMessage.value = ''
+  proxySettings.value = { fast_mode_enabled: nextValue }
+
+  try {
+    proxySettings.value = await apiRequest<ProxySettings>('/api/admin/settings/proxy', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        fast_mode_enabled: nextValue,
+      }),
+    })
+    settingsMessage.value = nextValue
+      ? 'Fast 模式已开启，后续代理请求会优先走更快的模式。'
+      : 'Fast 模式已关闭，代理恢复普通模式。'
+  } catch (err) {
+    proxySettings.value = { fast_mode_enabled: previousValue }
+    settingsError.value = err instanceof Error ? err.message : '切换 Fast 模式失败'
+  } finally {
+    settingsSaving.value = false
+  }
 }
 
 async function selectRange(range: DashboardTokenRange) {
@@ -519,6 +571,59 @@ onMounted(load)
         </article>
 
         <div class="dashboard-sidebar">
+          <article class="panel-card stack proxy-mode-panel">
+            <div class="panel-header">
+              <h3>代理模式</h3>
+              <span class="pill" :class="proxySettings?.fast_mode_enabled ? '' : 'muted-pill'">
+                {{ proxySettings?.fast_mode_enabled ? 'Fast On' : 'Fast Off' }}
+              </span>
+            </div>
+
+            <div
+              v-if="settingsError || settingsLoading || !proxySettings"
+              class="status-stack"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              <p v-if="settingsError" class="error-text" role="alert">{{ settingsError }}</p>
+              <p v-else-if="settingsLoading" class="muted" role="status">正在读取代理模式...</p>
+              <p v-else class="muted" role="status">暂时拿不到代理模式状态。</p>
+            </div>
+
+            <template v-else>
+              <div class="proxy-mode-shell">
+                <div class="stack-xs">
+                  <strong>Fast 模式</strong>
+                  <p class="muted proxy-mode-copy">
+                    开启后，代理会统一带上优先模式，适合你想整体走更快路径的时候。
+                  </p>
+                </div>
+
+                <button
+                  class="mode-toggle"
+                  type="button"
+                  :data-active="proxySettings.fast_mode_enabled"
+                  :aria-pressed="proxySettings.fast_mode_enabled"
+                  :disabled="settingsSaving"
+                  @click="toggleFastMode"
+                >
+                  <span class="mode-toggle-thumb" />
+                  <span class="sr-only">
+                    {{ proxySettings.fast_mode_enabled ? '关闭 Fast 模式' : '开启 Fast 模式' }}
+                  </span>
+                </button>
+              </div>
+
+              <p class="proxy-mode-note">
+                当前状态：{{ proxySettings.fast_mode_enabled ? '已开启' : '已关闭' }}
+              </p>
+
+              <div class="status-stack" aria-live="polite" aria-atomic="true">
+                <p v-if="settingsMessage" class="muted" role="status">{{ settingsMessage }}</p>
+              </div>
+            </template>
+          </article>
+
           <article class="panel-card stack">
             <div class="panel-header">
               <h3>窗口利用率</h3>

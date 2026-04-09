@@ -95,6 +95,10 @@ export interface DashboardSummary {
   highest_seven_day_usage: number | null
 }
 
+export interface ProxySettings {
+  fast_mode_enabled: boolean
+}
+
 export type DashboardTokenRange = '24h' | '7d' | '30d'
 
 export interface DashboardTokenUsagePoint {

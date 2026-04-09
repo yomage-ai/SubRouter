@@ -31,6 +31,40 @@ impl Storage {
         &self.pool
     }
 
+    pub async fn force_priority_service_tier_override(&self) -> Result<Option<bool>, StorageError> {
+        sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT bool_value
+            FROM app_settings
+            WHERE setting_key = 'force_priority_service_tier'
+            "#,
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(Into::into)
+    }
+
+    pub async fn set_force_priority_service_tier_override(
+        &self,
+        enabled: bool,
+    ) -> Result<(), StorageError> {
+        sqlx::query(
+            r#"
+            INSERT INTO app_settings (setting_key, bool_value, updated_at)
+            VALUES ('force_priority_service_tier', $1, NOW())
+            ON CONFLICT (setting_key)
+            DO UPDATE SET
+                bool_value = EXCLUDED.bool_value,
+                updated_at = NOW()
+            "#,
+        )
+        .bind(enabled)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn list_accounts(&self) -> Result<Vec<AccountOverview>, StorageError> {
         let accounts = sqlx::query_as::<_, AccountRow>(
             r#"

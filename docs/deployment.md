@@ -39,11 +39,16 @@
 
 - `SUBROUTER_WEB_ORIGIN=http://127.0.0.1:5173`
 - `SUBROUTER_COOKIE_SECURE=false`
+- `SUBROUTER_FORCE_PRIORITY_SERVICE_TIER=false`
 
 如果将来挂到 HTTPS 域名，再把：
 
 - `SUBROUTER_WEB_ORIGIN` 改成真实访问地址
 - `SUBROUTER_COOKIE_SECURE` 改成 `true`
+
+如果希望代理统一给 OpenAI Responses 请求加上 `service_tier: "priority"`，再把：
+
+- `SUBROUTER_FORCE_PRIORITY_SERVICE_TIER` 改成 `true`
 
 ## 启动 PostgreSQL
 

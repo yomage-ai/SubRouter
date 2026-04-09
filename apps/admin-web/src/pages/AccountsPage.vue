@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { apiRequest } from '../lib/api'
@@ -26,13 +26,26 @@ interface ClipboardImportPayload {
   last_refresh?: string | null
 }
 
+interface CodexLoginStartResponse {
+  auth_url: string
+  callback_origin: string
+}
+
+interface CodexLoginMessage {
+  source?: string
+  status?: 'success' | 'error'
+  message?: string
+}
+
 const loading = ref(true)
 const saving = ref(false)
 const probingAll = ref(false)
 const importing = ref(false)
+const oauthStarting = ref(false)
 const error = ref('')
 const message = ref('')
 const accounts = ref<AccountOverview[]>([])
+const expectedOauthOrigin = ref('')
 
 const form = reactive({
   name: '',
@@ -120,6 +133,40 @@ async function pasteFromClipboard() {
     error.value = err instanceof Error ? err.message : '读取剪贴板失败'
   } finally {
     importing.value = false
+  }
+}
+
+async function startCodexLogin() {
+  oauthStarting.value = true
+  error.value = ''
+  message.value = ''
+
+  try {
+    const response = await apiRequest<CodexLoginStartResponse>('/api/admin/oauth/codex/start', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: form.name || null,
+        weight: form.weight,
+        max_sessions: form.max_sessions,
+      }),
+    })
+
+    const popup = window.open(
+      response.auth_url,
+      'subrouter-codex-oauth',
+      'popup=yes,width=720,height=840,resizable=yes,scrollbars=yes',
+    )
+    if (!popup) {
+      throw new Error('浏览器拦截了登录窗口，请允许弹窗后重试。')
+    }
+
+    expectedOauthOrigin.value = response.callback_origin
+    popup.focus()
+    message.value = 'Codex 登录窗口已打开，完成登录后会自动回到这里。'
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '启动 Codex 登录失败'
+  } finally {
+    oauthStarting.value = false
   }
 }
 
@@ -350,7 +397,35 @@ async function submit() {
   }
 }
 
-onMounted(loadAccounts)
+function handleCodexLoginMessage(event: MessageEvent<CodexLoginMessage>) {
+  if (!expectedOauthOrigin.value || event.origin !== expectedOauthOrigin.value) {
+    return
+  }
+
+  const payload = event.data
+  if (!payload || payload.source !== 'subrouter-codex-oauth') {
+    return
+  }
+
+  expectedOauthOrigin.value = ''
+  if (payload.status === 'success') {
+    error.value = ''
+    message.value = payload.message ?? 'Codex 账号已登录并保存。'
+    void loadAccounts()
+    return
+  }
+
+  error.value = payload.message ?? 'Codex 登录失败'
+}
+
+onMounted(() => {
+  void loadAccounts()
+  window.addEventListener('message', handleCodexLoginMessage)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('message', handleCodexLoginMessage)
+})
 </script>
 
 <template>
@@ -364,7 +439,7 @@ onMounted(loadAccounts)
         <button
           class="ghost-button"
           type="button"
-          :disabled="loading || saving || probingAll || importing"
+          :disabled="loading || saving || probingAll || importing || oauthStarting"
           @click="probeAllQuotas"
         >
           {{ probingAll ? 'Probe 中...' : '一键刷新配额' }}
@@ -372,7 +447,7 @@ onMounted(loadAccounts)
         <button
           class="ghost-button"
           type="button"
-          :disabled="loading || saving || probingAll || importing"
+          :disabled="loading || saving || probingAll || importing || oauthStarting"
           @click="loadAccounts"
         >
           刷新
@@ -479,7 +554,15 @@ onMounted(loadAccounts)
           <button
             class="ghost-button"
             type="button"
-            :disabled="saving || probingAll || importing"
+            :disabled="saving || probingAll || importing || oauthStarting"
+            @click="startCodexLogin"
+          >
+            {{ oauthStarting ? '准备中...' : '网页登录' }}
+          </button>
+          <button
+            class="ghost-button"
+            type="button"
+            :disabled="saving || probingAll || importing || oauthStarting"
             @click="pasteFromClipboard"
           >
             {{ importing ? '读取中...' : '粘贴导入' }}
@@ -509,6 +592,10 @@ onMounted(loadAccounts)
               <input v-model="form.token_expires_at" type="datetime-local" />
             </label>
           </div>
+
+          <p class="paste-note">
+            网页登录会沿用这里的名称、权重和 max_sessions；如果名称留空，系统会自动生成。
+          </p>
 
           <p class="paste-note">
             支持直接粘贴包含 <code>access_token</code>、<code>refresh_token</code> 的 ChatGPT JSON，自动填充表单。
@@ -542,7 +629,11 @@ onMounted(loadAccounts)
             </div>
           </details>
 
-          <button class="primary-button" type="submit" :disabled="saving || importing">
+          <button
+            class="primary-button"
+            type="submit"
+            :disabled="saving || importing || oauthStarting"
+          >
             {{ saving ? '保存中...' : '创建账号' }}
           </button>
         </form>
