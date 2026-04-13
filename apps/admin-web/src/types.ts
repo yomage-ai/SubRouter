@@ -91,6 +91,9 @@ export interface DashboardSummary {
   requests_last_24h: number
   input_tokens_last_24h: number
   output_tokens_last_24h: number
+  output_tokens_per_second: number | null
+  fast_mode_output_tokens_per_second: number | null
+  standard_mode_output_tokens_per_second: number | null
   highest_five_hour_usage: number | null
   highest_seven_day_usage: number | null
 }

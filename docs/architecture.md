@@ -16,14 +16,14 @@
 ## Proxy And Switching Design
 - 客户端入口固定支持 3 个面：`POST /v1/responses`、`GET /v1/responses` 的 WebSocket Upgrade、`POST /v1/responses/compact`。
 - 透明代理必须透传或重建这些关键头与字段：`originator`、`user-agent`、`openai-beta`、`session_id`、`conversation_id`、`x-codex-turn-state`、`x-codex-turn-metadata`、`previous_response_id`。
-- 账号选路规则固定为：先命中会话亲和，其次过滤掉 `disabled / refresh_failed / cooldown / quota exhausted / active_sessions >= max_sessions` 的账号；若 `7d` 重置剩余时间不超过 `3 小时`，则该账号先进入“优先用完”队列；随后再按综合分数选最优账号。综合分数会同时考虑 `7d 剩余`、`7d 重置节奏`、`5h 剩余` 和 `会话空闲度`，再以 `active_sessions` 升序和 `last_selected_at` 升序兜底。
+- 账号选路规则固定为：先命中会话亲和，其次过滤掉 `disabled / refresh_failed / cooldown / quota exhausted` 的账号；若 `7d` 重置剩余时间不超过 `3 小时`，则该账号先进入“优先用完”队列；随后再按综合分数选最优账号。综合分数会同时考虑 `7d 剩余`、`7d 重置节奏` 和 `5h 剩余`，再以当前活跃会话数升序和 `last_selected_at` 升序兜底。
 - 会话键固定为 `session_id > conversation_id > previous_response_id > request_id` 的优先级组合；一旦 WebSocket 会话建立或某条响应链已经绑定账号，后续 turn 默认不迁移。
 - “无感切换”在 v1 的定义是安全边界切换，不做中途迁移：新会话可换账号；HTTP 请求或 WS turn 在首个 token 前若遇到可恢复错误，可换账号重试一次；若命中 `previous_response_not_found`，允许丢弃 `previous_response_id` 后按新 turn 重放一次。
 - 429 或配额信号统一从 `x-codex-*` 响应头归一化为 `5h` 和 `7d` 快照；若某窗口达到 100%，将账号标记 `cooldown_until = reset_at`，并在管理页显示原因和剩余时间。
 
 ## Data Model And Public Interfaces
 - 持久化实体固定为 5 张主表：`accounts`、`account_secrets`、`quota_snapshots`、`usage_events`、`session_affinity`。
-- `accounts` 保存展示与调度字段：名称、状态、权重、最大并发、cooldown、最后选择时间、最近错误、最近成功时间。
+- `accounts` 保存展示与调度字段：名称、状态、权重、cooldown、最后选择时间、最近错误、最近成功时间，以及兼容保留的旧会话上限字段。
 - `account_secrets` 单独保存敏感信息：`access_token`、`refresh_token`、过期时间、指纹/UA 元数据；全部用 `SUBROUTER_MASTER_KEY` 做应用层加密。
 - `quota_snapshots` 只存观察到的上游配额：`account_id`、`window_type(5h|7d)`、`used_percent`、`reset_at`、`source(header|probe)`、`updated_at`。
 - `usage_events` 记录每个 turn 或请求的统计：`account_id`、`transport(http|ws)`、`model`、`input_tokens`、`output_tokens`、`usage_source(exact|estimated)`、`latency_ms`、`response_id`、`session_key`、`created_at`。
@@ -34,7 +34,7 @@
 ## Delivery Plan
 - Phase 1：搭好 Rust workspace、数据库迁移、账号模型、加密存储、管理 API 骨架、Vue 管理台骨架。
 - Phase 2：完成 `POST /v1/responses` 透明代理、OAuth token 刷新、账号池选路、HTTP usage 记录。
-- Phase 3：完成 `GET /v1/responses` WebSocket 透明转发、会话粘性、`previous_response_id` 恢复策略、并发会话限制。
+- Phase 3：完成 `GET /v1/responses` WebSocket 透明转发、会话粘性，以及 `previous_response_id` 恢复策略。
 - Phase 4：完成 `x-codex-*` 配额解析、手动 probe、仪表盘、账号详情页与冷却状态展示。
 - Phase 5：补齐 CLI 烟测脚本、Docker Compose、自托管部署文档与运维手册。
 

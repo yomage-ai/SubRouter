@@ -149,6 +149,13 @@ function formatPercent(value: number | null) {
   return `${value.toFixed(1)}%`
 }
 
+function formatTokensPerSecond(value: number | null) {
+  if (value === null) {
+    return '未知'
+  }
+  return `${value.toFixed(value >= 100 ? 0 : 1)} token/s`
+}
+
 function formatCooldownSummary(count: number) {
   if (count === 0) {
     return '当前没有账号处于 cooldown。'
@@ -622,6 +629,28 @@ onMounted(load)
                 <p v-if="settingsMessage" class="muted" role="status">{{ settingsMessage }}</p>
               </div>
             </template>
+          </article>
+
+          <article class="panel-card stack">
+            <div class="panel-header">
+              <h3>输出速度</h3>
+              <span class="pill">token/s</span>
+            </div>
+            <div class="stat-row">
+              <span>总输出速度</span>
+              <strong>{{ formatTokensPerSecond(summary.output_tokens_per_second) }}</strong>
+            </div>
+            <div class="stat-row">
+              <span>Fast 模式</span>
+              <strong>{{ formatTokensPerSecond(summary.fast_mode_output_tokens_per_second) }}</strong>
+            </div>
+            <div class="stat-row">
+              <span>普通模式</span>
+              <strong>{{ formatTokensPerSecond(summary.standard_mode_output_tokens_per_second) }}</strong>
+            </div>
+            <p class="muted">
+              这里按历史成功请求汇总输出 token 和总耗时来算，所以更适合看整体效率，不是单次体感速度。
+            </p>
           </article>
 
           <article class="panel-card stack">

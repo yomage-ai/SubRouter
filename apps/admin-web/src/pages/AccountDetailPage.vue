@@ -232,9 +232,7 @@ onMounted(() => loadDetail())
           <div class="stat-row">
             <span>当前会话</span>
             <div class="stat-value-block">
-              <strong>
-                {{ detail.overview.current_session_count }} / {{ detail.overview.account.max_sessions }}
-              </strong>
+              <strong>{{ detail.overview.current_session_count }}</strong>
               <div class="table-subtext">只统计活跃 WS 会话，不统计已完成的 HTTP 请求。</div>
             </div>
           </div>

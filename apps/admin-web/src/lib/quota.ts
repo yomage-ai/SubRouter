@@ -89,27 +89,18 @@ export function resetWindowRemainingPercent(quota: QuotaSnapshot | undefined): n
 export function quotaPriorityScore(
   sevenDayQuota: QuotaSnapshot | undefined,
   fiveHourQuota: QuotaSnapshot | undefined,
-  currentSessionCount: number,
-  maxSessions: number,
 ): number | null {
   const sevenDayRemaining = remainingPercent(sevenDayQuota)
   const resetRemaining = resetWindowRemainingPercent(sevenDayQuota)
   const fiveHourRemaining = remainingPercent(fiveHourQuota)
-  const sessionCapacityRemaining = sessionCapacityRemainingPercent(currentSessionCount, maxSessions)
-  if (
-    sevenDayRemaining === null ||
-    resetRemaining === null ||
-    fiveHourRemaining === null ||
-    sessionCapacityRemaining === null
-  ) {
+  if (sevenDayRemaining === null || resetRemaining === null || fiveHourRemaining === null) {
     return null
   }
 
   const recyclablePressure = sevenDayRemaining * (1 - resetRemaining / 100)
   const fiveHourFactor = 0.5 + fiveHourRemaining / 200
-  const sessionFactor = 0.5 + sessionCapacityRemaining / 200
 
-  return recyclablePressure * fiveHourFactor * sessionFactor
+  return recyclablePressure * fiveHourFactor
 }
 
 export function isUrgentSevenDayReset(quota: QuotaSnapshot | undefined): boolean {
@@ -128,15 +119,4 @@ export function isUrgentSevenDayReset(quota: QuotaSnapshot | undefined): boolean
 
 function clampPercent(value: number): number {
   return Math.min(100, Math.max(0, value))
-}
-
-function sessionCapacityRemainingPercent(
-  currentSessionCount: number,
-  maxSessions: number,
-): number | null {
-  if (maxSessions <= 0) {
-    return null
-  }
-
-  return clampPercent(((maxSessions - currentSessionCount) / maxSessions) * 100)
 }

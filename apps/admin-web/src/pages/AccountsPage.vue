@@ -50,7 +50,6 @@ const expectedOauthOrigin = ref('')
 const form = reactive({
   name: '',
   weight: 1,
-  max_sessions: 1,
   access_token: '',
   refresh_token: '',
   token_expires_at: '',
@@ -147,7 +146,6 @@ async function startCodexLogin() {
       body: JSON.stringify({
         name: form.name || null,
         weight: form.weight,
-        max_sessions: form.max_sessions,
       }),
     })
 
@@ -218,7 +216,6 @@ function formatSuccessRate(value: number) {
 function resetForm() {
   form.name = ''
   form.weight = 1
-  form.max_sessions = 1
   form.access_token = ''
   form.refresh_token = ''
   form.token_expires_at = ''
@@ -273,14 +270,10 @@ function compareAccounts(left: AccountOverview, right: AccountOverview) {
     quotaPriorityScore(
       leftSevenDay,
       leftFiveHour,
-      left.current_session_count,
-      left.account.max_sessions,
     ),
     quotaPriorityScore(
       rightSevenDay,
       rightFiveHour,
-      right.current_session_count,
-      right.account.max_sessions,
     ),
   )
   if (byPriority !== 0) {
@@ -367,8 +360,8 @@ async function submit() {
     return
   }
 
-  if (form.weight < 1 || form.max_sessions < 1) {
-    error.value = '权重和 max_sessions 都必须大于等于 1'
+  if (form.weight < 1) {
+    error.value = '权重必须大于等于 1'
     return
   }
 
@@ -465,7 +458,7 @@ onBeforeUnmount(() => {
         <div class="panel-header">
           <div>
             <h3>当前账号池</h3>
-            <p class="muted account-section-copy">把账号池作为主视区，优先观察剩余额度、重置节奏和会话承载情况。</p>
+            <p class="muted account-section-copy">把账号池作为主视区，优先观察剩余额度、重置节奏和当前会话占用。</p>
           </div>
           <span class="pill muted-pill">{{ accounts.length }} 个账号</span>
         </div>
@@ -496,7 +489,7 @@ onBeforeUnmount(() => {
                 <h3 class="account-card-title wrap-text">{{ item.account.name }}</h3>
               </div>
               <p class="account-card-subtitle">
-                会话 {{ item.current_session_count }} / {{ item.account.max_sessions }} · {{ latestAccountNote(item) }}
+                当前会话 {{ item.current_session_count }} · {{ latestAccountNote(item) }}
               </p>
               <p class="account-card-stats">
                 成功率 {{ formatSuccessRate(item.usage.success_rate) }} · 输入
@@ -582,19 +575,13 @@ onBeforeUnmount(() => {
             </label>
 
             <label class="field">
-              <span>max_sessions</span>
-              <input v-model.number="form.max_sessions" type="number" min="1" />
-              <small class="field-hint">单个账号允许同时承载的活跃 WS 会话数。</small>
-            </label>
-
-            <label class="field">
               <span>Token 过期时间</span>
               <input v-model="form.token_expires_at" type="datetime-local" />
             </label>
           </div>
 
           <p class="paste-note">
-            网页登录会沿用这里的名称、权重和 max_sessions；如果名称留空，系统会自动生成。
+            网页登录会沿用这里的名称和权重；如果名称留空，系统会自动生成。
           </p>
 
           <p class="paste-note">

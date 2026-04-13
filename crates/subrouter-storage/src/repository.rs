@@ -9,7 +9,7 @@ use subrouter_domain::{
     AccountUsageStats, AccountUsageSummary, CreateAccountInput, DashboardSummary,
     DashboardTokenRange, DashboardTokenUsagePoint, DashboardTokenUsageSeries, QuotaSnapshot,
     QuotaSource, RequestOutcome, SessionAffinity, Transport, UpdateAccountInput, UsageEvent,
-    UsageSource, WindowType, success_rate_percent,
+    UsageSource, WindowType, output_tokens_per_second, success_rate_percent,
 };
 use thiserror::Error;
 use uuid::Uuid;
@@ -553,7 +553,8 @@ impl Storage {
         let recent_events = sqlx::query_as::<_, UsageEventRow>(
             r#"
             SELECT id, account_id, transport, model, input_tokens, output_tokens,
-                   usage_source, outcome, latency_ms, response_id, session_key, created_at
+                   usage_source, outcome, latency_ms, response_id, session_key,
+                   fast_mode_enabled, created_at
             FROM usage_events
             WHERE account_id = $1
             ORDER BY created_at DESC
@@ -606,7 +607,29 @@ impl Storage {
             SELECT
                 COALESCE(COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '24 hours'), 0)::BIGINT AS requests_last_24h,
                 COALESCE(SUM(input_tokens) FILTER (WHERE created_at >= NOW() - INTERVAL '24 hours'), 0)::BIGINT AS input_tokens_last_24h,
-                COALESCE(SUM(output_tokens) FILTER (WHERE created_at >= NOW() - INTERVAL '24 hours'), 0)::BIGINT AS output_tokens_last_24h
+                COALESCE(SUM(output_tokens) FILTER (WHERE created_at >= NOW() - INTERVAL '24 hours'), 0)::BIGINT AS output_tokens_last_24h,
+                COALESCE(SUM(output_tokens) FILTER (
+                    WHERE usage_source = 'exact' AND outcome = 'success' AND latency_ms > 0
+                ), 0)::BIGINT AS output_tokens_exact,
+                COALESCE(SUM(latency_ms) FILTER (
+                    WHERE usage_source = 'exact' AND outcome = 'success' AND latency_ms > 0
+                ), 0)::BIGINT AS latency_ms_exact,
+                COALESCE(SUM(output_tokens) FILTER (
+                    WHERE usage_source = 'exact' AND outcome = 'success' AND latency_ms > 0
+                      AND fast_mode_enabled = TRUE
+                ), 0)::BIGINT AS fast_output_tokens_exact,
+                COALESCE(SUM(latency_ms) FILTER (
+                    WHERE usage_source = 'exact' AND outcome = 'success' AND latency_ms > 0
+                      AND fast_mode_enabled = TRUE
+                ), 0)::BIGINT AS fast_latency_ms_exact,
+                COALESCE(SUM(output_tokens) FILTER (
+                    WHERE usage_source = 'exact' AND outcome = 'success' AND latency_ms > 0
+                      AND fast_mode_enabled = FALSE
+                ), 0)::BIGINT AS standard_output_tokens_exact,
+                COALESCE(SUM(latency_ms) FILTER (
+                    WHERE usage_source = 'exact' AND outcome = 'success' AND latency_ms > 0
+                      AND fast_mode_enabled = FALSE
+                ), 0)::BIGINT AS standard_latency_ms_exact
             FROM usage_events
             "#,
         )
@@ -654,6 +677,18 @@ impl Storage {
             requests_last_24h: usage_summary.requests_last_24h,
             input_tokens_last_24h: usage_summary.input_tokens_last_24h,
             output_tokens_last_24h: usage_summary.output_tokens_last_24h,
+            output_tokens_per_second: output_tokens_per_second(
+                usage_summary.output_tokens_exact,
+                usage_summary.latency_ms_exact,
+            ),
+            fast_mode_output_tokens_per_second: output_tokens_per_second(
+                usage_summary.fast_output_tokens_exact,
+                usage_summary.fast_latency_ms_exact,
+            ),
+            standard_mode_output_tokens_per_second: output_tokens_per_second(
+                usage_summary.standard_output_tokens_exact,
+                usage_summary.standard_latency_ms_exact,
+            ),
             highest_five_hour_usage,
             highest_seven_day_usage,
         })
@@ -727,9 +762,10 @@ impl Storage {
             r#"
             INSERT INTO usage_events (
                 id, account_id, transport, model, input_tokens, output_tokens,
-                usage_source, outcome, latency_ms, response_id, session_key, created_at
+                usage_source, outcome, latency_ms, response_id, session_key,
+                fast_mode_enabled, created_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             "#,
         )
         .bind(event.id)
@@ -743,6 +779,7 @@ impl Storage {
         .bind(event.latency_ms)
         .bind(event.response_id)
         .bind(event.session_key)
+        .bind(event.fast_mode_enabled)
         .bind(event.created_at)
         .execute(&self.pool)
         .await?;
@@ -1171,6 +1208,7 @@ struct UsageEventRow {
     latency_ms: Option<i32>,
     response_id: Option<String>,
     session_key: Option<String>,
+    fast_mode_enabled: bool,
     created_at: DateTime<Utc>,
 }
 
@@ -1212,6 +1250,12 @@ struct DashboardUsageSummaryRow {
     requests_last_24h: i64,
     input_tokens_last_24h: i64,
     output_tokens_last_24h: i64,
+    output_tokens_exact: i64,
+    latency_ms_exact: i64,
+    fast_output_tokens_exact: i64,
+    fast_latency_ms_exact: i64,
+    standard_output_tokens_exact: i64,
+    standard_latency_ms_exact: i64,
 }
 
 #[derive(Debug, FromRow)]
@@ -1357,6 +1401,7 @@ impl TryFrom<UsageEventRow> for UsageEvent {
             latency_ms: value.latency_ms,
             response_id: value.response_id,
             session_key: value.session_key,
+            fast_mode_enabled: value.fast_mode_enabled,
             created_at: value.created_at,
         })
     }

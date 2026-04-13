@@ -67,7 +67,7 @@ npm run build
 - 账号被手动停用
 - refresh 失败后状态变成 `refresh_failed`
 - 5h 或 7d 配额打满，账号处于 `cooldown_until`
-- WS 活跃会话数已经达到 `max_sessions`
+- 某些账号虽然活跃会话很多，但当前版本不会再因为会话数直接拒绝新会话
 
 处理顺序建议：
 
